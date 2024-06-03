@@ -5,12 +5,15 @@ import replicate
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 from vectors import embeddings, index
+from transformers import pipeline
 
 app = FastAPI()
 
 openai.api_key = os.environ['OPENAI_API_KEY']
 
-# frontend
+# model for coherence evalation
+coherence_evaluator = pipeline("text-classification", model="cointegrated/roberta-large-cola-krishna2020")
+
 html_content = """
 <!DOCTYPE html>
 <html>
@@ -31,6 +34,7 @@ html_content = """
                 event.preventDefault();
                 const prompt = document.getElementById('prompt').value;
                 const responseDiv = document.getElementById('responses');
+                responseDiv.innerHTML = '';
                 const socket = new WebSocket('ws://localhost:8000/ws');
                 socket.onopen = () => {
                     socket.send(JSON.stringify({ prompt }));
@@ -60,16 +64,15 @@ async def websocket_endpoint(websocket: WebSocket):
         
         # Query Pinecone vector database
         search_results = index.query(
-            embeddings.embed_query(prompt),
-            top_k=5,
-            namespace="default"
+            vector=embeddings.embed_query(prompt),
+            top_k=5
         )
         
-        # Extract relevant chunks
+ 
         relevant_chunks = [result['metadata']['text'] for result in search_results['matches']]
         combined_prompt = "\n".join(relevant_chunks) + "\n" + prompt
 
-        #  LLMs
+        # LLMs 
         models = {
             "gpt-3.5-turbo": lambda p: openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[{"role": "user", "content": p}]),
             "gpt-4": lambda p: openai.ChatCompletion.create(model="gpt-4", messages=[{"role": "user", "content": p}]),
@@ -77,15 +80,44 @@ async def websocket_endpoint(websocket: WebSocket):
             "Falcon-40b-instruct": lambda p: replicate.run("joehoover/falcon-40b-instruct:latest", input={"prompt": p})
         }
         
-        # provides theresponse of the LLMs.
+        responses = {}
+        
+        # Query each model
         for model_name, model_func in models.items():
             response = model_func(combined_prompt)
             if model_name in ["gpt-3.5-turbo", "gpt-4"]:
                 response_text = response.choices[0].message['content']
             else:
                 response_text = response['output']
+            responses[model_name] = response_text
             await websocket.send_text(json.dumps({"model": model_name, "response": response_text}))
+        
+        # compare and evaluate the generated outputs to find thebest-performing LLM for the given user input.
+        best_model = evaluate_responses(responses, relevant_chunks)
+        await websocket.send_text(json.dumps({"model": "Best Model", "response": best_model}))
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+def evaluate_responses(responses, relevant_chunks):
+    def relevance_score(response):
+        # count the number of relevant chunk words in the response
+        response_words = set(response.split())
+        return sum(any(word in response_words for word in chunk.split()) for chunk in relevant_chunks)
+
+    def coherence_score(response):
+        # evaluate coherence
+        result = coherence_evaluator(response)
+        return result[0]['score'] if result[0]['label'] == 'acceptable' else 0
+
+    def length_score(response):
+        # Length score: penalize too short (<50) or too long (>500) responses
+        length = len(response.split())
+        if length < 50 or length > 500:
+            return 0
+        return length
+
+    scores = {}
+    for model, response in responses.items():
+        relevance = relevance_score(response)
+        coherence = coherence_score(response)
+        length = length_score(response)
+        total_score = relevance + coherence + length
+        scores[model] = total_score
