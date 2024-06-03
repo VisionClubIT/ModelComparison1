@@ -1,8 +1,0 @@
-fastapi
-uvicorn
-openai
-replicate
-requests
-beautifulsoup4
-langchain
-pinecone-client

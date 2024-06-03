@@ -6,4 +6,13 @@ langchain
 pandas
 numpy
 python-dotenv
+fastapi
+uvicorn
+openai
+replicate
+requests
+beautifulsoup4
+langchain
+pinecone-client
+
 
