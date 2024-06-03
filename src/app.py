@@ -1,10 +1,10 @@
 import os
+from urllib.parse import urljoin
 import json
 import openai
 import replicate
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
-from vectors import embeddings, index
 from transformers import pipeline
 
 app = FastAPI()
