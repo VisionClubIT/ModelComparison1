@@ -7,6 +7,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from pinecone import Pinecone, ServerlessSpec
 import numpy as np 
 
+
 def chunk_data(contents_dict, chunk_size=2000, chunk_overlap=100):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     chunked_contents = {}
