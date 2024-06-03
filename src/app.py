@@ -6,7 +6,7 @@ import replicate
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 from transformers import pipeline
-
+from vectors import embeddings, index
 app = FastAPI()
 
 openai.api_key = os.environ['OPENAI_API_KEY']
